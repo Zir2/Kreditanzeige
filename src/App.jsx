@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLoan } from './hooks/useLoan';
 import StatCard from './components/StatCard';
 import GlassCard from './components/GlassCard';
@@ -28,19 +28,44 @@ ChartJS.register(
 );
 
 function App() {
-  const [config, setConfig] = useState({
-    principal: 250000,
-    interestRate: 3.45,
-    monthlyPayment: 1250,
-    startDate: '2023-01-01',
-    marketRate: 2.5
+  const [config, setConfig] = useState(() => {
+    const saved = localStorage.getItem('lumina_config');
+    return saved ? JSON.parse(saved) : {
+      principal: 250000,
+      interestRate: 3.45,
+      monthlyPayment: 1250,
+      startDate: '2023-01-01',
+      marketRate: 2.5,
+      extraPayments: []
+    };
   });
 
-  const [extraPayment, setExtraPayment] = useState('');
+  useEffect(() => {
+    localStorage.setItem('lumina_config', JSON.stringify(config));
+  }, [config]);
+
+  const [extraPayment, setExtraPayment] = useState({ amount: '', date: new Date().toISOString().split('T')[0] });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   const loan = useLoan(config);
-  const penaltyData = loan ? calculatePenalty(parseFloat(extraPayment), loan, config) : null;
+  const penaltyData = loan ? calculatePenalty(parseFloat(extraPayment.amount), loan, config) : null;
+
+  const handleAddExtraPayment = () => {
+    if (!extraPayment.amount || !extraPayment.date) return;
+    
+    setConfig(prev => ({
+      ...prev,
+      extraPayments: [...prev.extraPayments, { ...extraPayment }].sort((a, b) => new Date(a.date) - new Date(b.date))
+    }));
+    setExtraPayment({ amount: '', date: new Date().toISOString().split('T')[0] });
+  };
+
+  const handleRemoveExtraPayment = (index) => {
+    setConfig(prev => ({
+      ...prev,
+      extraPayments: prev.extraPayments.filter((_, i) => i !== index)
+    }));
+  };
 
   const chartData = loan ? {
     labels: loan.chartData.labels,
@@ -160,16 +185,36 @@ function App() {
             <GlassCard>
               <h4 className="font-display text-xl font-bold mb-6">Sondertilgung</h4>
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2 ml-1">Betrag (€)</label>
-                  <input 
-                    type="number" 
-                    value={extraPayment}
-                    onChange={(e) => setExtraPayment(e.target.value)}
-                    placeholder="z.B. 5000" 
-                    className="w-full input-glass rounded-xl px-4 py-3 font-mono"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2 ml-1">Betrag (€)</label>
+                    <input 
+                      type="number" 
+                      value={extraPayment.amount}
+                      onChange={(e) => setExtraPayment({ ...extraPayment, amount: e.target.value })}
+                      placeholder="z.B. 5000" 
+                      className="w-full input-glass rounded-xl px-4 py-3 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-2 ml-1">Datum</label>
+                    <input 
+                      type="date" 
+                      value={extraPayment.date}
+                      onChange={(e) => setExtraPayment({ ...extraPayment, date: e.target.value })}
+                      className="w-full input-glass rounded-xl px-4 py-3 font-mono text-sm"
+                    />
+                  </div>
                 </div>
+
+                <button 
+                  onClick={handleAddExtraPayment}
+                  disabled={!extraPayment.amount || !extraPayment.date}
+                  className="w-full bg-primary text-white py-3 rounded-xl font-bold hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-sm">add_circle</span>
+                  Sondertilgung hinzufügen
+                </button>
                 
                 {penaltyData && penaltyData.penalty > 0 && (
                   <div className="p-4 rounded-xl bg-error/5 border border-error/10">
@@ -188,9 +233,28 @@ function App() {
                     <div className="flex items-start gap-3">
                       <span className="material-symbols-outlined text-lg">savings</span>
                       <div>
-                        <p className="text-xs font-bold uppercase">Ersparnis</p>
-                        <p className="text-sm font-medium mt-1">{penaltyData.savings.toLocaleString('de-DE')} € Zinsen gespart</p>
+                        <p className="text-xs font-bold uppercase">Zins-Ersparnis</p>
+                        <p className="text-sm font-medium mt-1">{penaltyData.savings.toLocaleString('de-DE')} €</p>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {config.extraPayments.length > 0 && (
+                  <div className="pt-4 border-t border-white/20">
+                    <p className="text-xs font-bold uppercase text-on-surface-variant mb-3 ml-1">Geplante Tilgungen</p>
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-2">
+                      {config.extraPayments.map((ep, i) => (
+                        <div key={i} className="flex items-center justify-between p-3 bg-white/40 rounded-xl border border-white/20 text-sm">
+                          <div>
+                            <span className="font-mono font-bold text-primary">{parseFloat(ep.amount).toLocaleString('de-DE')} €</span>
+                            <span className="text-on-surface-variant ml-2 text-xs">({new Date(ep.date).toLocaleDateString('de-DE')})</span>
+                          </div>
+                          <button onClick={() => handleRemoveExtraPayment(i)} className="text-error/60 hover:text-error transition-colors">
+                            <span className="material-symbols-outlined text-lg">delete</span>
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

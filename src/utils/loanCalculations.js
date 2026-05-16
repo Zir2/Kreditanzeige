@@ -4,6 +4,7 @@ export const calculateLoanDetails = (config) => {
   const m = parseFloat(config.monthlyPayment);
   const start = new Date(config.startDate);
   const now = new Date();
+  const extraPayments = config.extraPayments || [];
 
   let balance = p;
   let totalInterest = 0;
@@ -18,6 +19,15 @@ export const calculateLoanDetails = (config) => {
     interest: []
   };
 
+  // Helper to find extra payments for current month
+  const getExtraForMonth = (mIdx) => {
+    return extraPayments.filter(ep => {
+      const epDate = new Date(ep.date);
+      const diffMonths = (epDate.getFullYear() - start.getFullYear()) * 12 + (epDate.getMonth() - start.getMonth());
+      return diffMonths === mIdx;
+    }).reduce((sum, ep) => sum + parseFloat(ep.amount), 0);
+  };
+
   while (balance > 0 && months < 600) {
     let interest = balance * r;
     let principalRepayment = m - interest;
@@ -29,29 +39,35 @@ export const calculateLoanDetails = (config) => {
     }
 
     balance -= principalRepayment;
+    
+    // Apply extra payments for this month
+    const extra = getExtraForMonth(months);
+    balance -= extra;
+    
     totalInterest += interest;
     
     if (months < monthsToNow) {
-      paidPrincipal += principalRepayment;
+      paidPrincipal += (principalRepayment + extra);
       paidInterest += interest;
     }
 
     if (months % 12 === 0 || balance <= 0) {
-      chartData.principal.push(balance);
+      chartData.principal.push(Math.max(0, balance));
       chartData.interest.push(totalInterest);
       chartData.labels.push(start.getFullYear() + Math.floor(months/12));
     }
 
+    if (balance <= 0) break;
     months++;
   }
 
   return {
     totalInterest,
-    currentBalance: p - paidPrincipal,
+    currentBalance: Math.max(0, p - paidPrincipal),
     paidPrincipal,
     paidInterest,
     remainingMonths: Math.max(0, months - monthsToNow),
-    endDate: new Date(start.setMonth(start.getMonth() + months)),
+    endDate: new Date(new Date(config.startDate).setMonth(new Date(config.startDate).getMonth() + months)),
     chartData
   };
 };
